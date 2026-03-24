@@ -289,7 +289,10 @@
   <div class="panel">
     <div class="panel-header">
       <span class="panel-title"><span class="dot dot-amber"></span>Tailored Resume</span>
-      <button class="btn btn-ghost copy-btn" id="copyBtn" onclick="copyOutput()" style="display:none">Copy</button>
+      <div id="outputActions" style="display:none; gap:6px; align-items:center;">
+        <button class="btn btn-ghost copy-btn" id="copyBtn" onclick="copyOutput()">Copy</button>
+        <button class="btn btn-ghost copy-btn" id="pdfBtn" onclick="downloadPdf()">Download PDF</button>
+      </div>
     </div>
 
     <div class="loading-overlay" id="loading">
@@ -309,13 +312,15 @@
 <div class="toast" id="toast">Copied to clipboard!</div>
 
 <script>
+  let currentResumeJson = null;
+
   async function tailorResume() {
     const resume = document.getElementById('resume').value.trim();
     const jobDesc = document.getElementById('jobDesc').value.trim();
     const btn = document.getElementById('tailorBtn');
     const output = document.getElementById('output');
     const loading = document.getElementById('loading');
-    const copyBtn = document.getElementById('copyBtn');
+    const actions = document.getElementById('outputActions');
 
     if (!resume) { alert('Please paste your resume.'); return; }
     if (!jobDesc) { alert('Please paste the job description.'); return; }
@@ -324,7 +329,8 @@
     btn.textContent = 'Working…';
     output.style.display = 'none';
     loading.style.display = 'flex';
-    copyBtn.style.display = 'none';
+    actions.style.display = 'none';
+    currentResumeJson = null;
 
     try {
       const res = await fetch('/tailor', {
@@ -344,7 +350,10 @@
       } else {
         output.className = 'output-area';
         output.textContent = data.tailored_resume;
-        copyBtn.style.display = 'block';
+        currentResumeJson = data.resume_json;
+        actions.style.display = 'flex';
+        // Hide PDF button if JSON parsing failed
+        document.getElementById('pdfBtn').style.display = currentResumeJson ? 'block' : 'none';
       }
     } catch (err) {
       loading.style.display = 'none';
@@ -364,6 +373,40 @@
       toast.classList.add('show');
       setTimeout(() => toast.classList.remove('show'), 2000);
     });
+  }
+
+  async function downloadPdf() {
+    if (!currentResumeJson) return;
+    const btn = document.getElementById('pdfBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+
+    try {
+      const res = await fetch('/download-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resume_json: currentResumeJson })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert('PDF error: ' + (err.error || 'Unknown error'));
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (currentResumeJson.name || 'Resume').replace(/ /g, '_') + '_Tailored.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to generate PDF. Make sure the server is running.');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Download PDF';
   }
 
   // Allow Ctrl+Enter to trigger tailoring

@@ -1,9 +1,11 @@
 import io
+import json
 import os
 import pdfplumber
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from pdf_generator import generate_resume_pdf
 
 load_dotenv()
 
@@ -14,44 +16,6 @@ client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
-@app.route("/tailor", methods=["POST"])
-def tailor():
-    data = request.get_json()
-    resume = data.get("resume", "").strip()
-    job_description = data.get("job_description", "").strip()
-
-    if not resume or not job_description:
-        return jsonify({"error": "Both resume and job description are required."}), 400
-
-    prompt = f"""You are an expert resume writer. Your task is to tailor the provided resume to match the job description as closely as possible.
-
-CRITICAL RULES:
-1. Preserve the EXACT formatting, structure, and layout of the original resume (spacing, line breaks, bullet points, capitalization, section headers, etc.)
-2. Only modify the CONTENT — rephrase bullet points, reorder skills, and emphasize relevant experience to match the job description
-3. Do NOT add fake experience, jobs, or skills the candidate doesn't have
-4. Do NOT remove sections or structural elements
-5. Integrate keywords and phrases from the job description naturally where truthful
-6. Prioritize and reorder bullet points so the most relevant ones appear first
-7. Return ONLY the tailored resume — no explanations, no commentary, no markdown code blocks
-
-ORIGINAL RESUME:
-{resume}
-
-JOB DESCRIPTION:
-{job_description}
-
-TAILORED RESUME:"""
-
-    message = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    tailored = message.content[0].text.strip()
-    return jsonify({"tailored_resume": tailored})
 
 
 @app.route("/upload-pdf", methods=["POST"])
@@ -78,6 +42,136 @@ def upload_pdf():
         return jsonify({"error": "Could not extract text from this PDF."}), 422
 
     return jsonify({"text": full_text})
+
+
+@app.route("/tailor", methods=["POST"])
+def tailor():
+    data = request.get_json()
+    resume = data.get("resume", "").strip()
+    job_description = data.get("job_description", "").strip()
+
+    if not resume or not job_description:
+        return jsonify({"error": "Both resume and job description are required."}), 400
+
+    prompt = f"""You are an expert resume writer. Tailor the provided resume to match the job description.
+
+RULES:
+1. Only modify content — rephrase bullets, reorder skills, emphasize relevant experience
+2. Do NOT invent experience, jobs, or skills the candidate doesn't have
+3. Integrate keywords from the job description naturally where truthful
+4. Prioritize the most relevant bullet points first in each role
+5. Keep all sections and structural elements
+
+Return a JSON object with this EXACT schema (no explanation, no markdown, just the JSON):
+
+{{
+  "name": "full name",
+  "contact": "phone | email | url1 | url2 | url3",
+  "sections": [
+    {{
+      "title": "SECTION NAME IN CAPS",
+      "entries": [ ... ]
+    }}
+  ]
+}}
+
+Entry types:
+- SKILLS section entries: {{"label": "Category", "text": "skill1, skill2, ..."}}
+- All other entries: {{
+    "heading": "Organization or Institution Name",
+    "heading_right": "Date (optional)",
+    "subheading": "Degree or Role (italic, optional)",
+    "subheading_right": "GPA or similar (bold, optional)",
+    "body": "Paragraph text like Relevant Coursework (optional)",
+    "bullets": ["bullet 1", "bullet 2"]
+  }}
+
+RESUME:
+{resume}
+
+JOB DESCRIPTION:
+{job_description}"""
+
+    message = client.messages.create(
+        model="claude-opus-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw = message.content[0].text.strip()
+
+    # Strip markdown code fences if Claude wrapped the JSON
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+    try:
+        resume_json = json.loads(raw)
+    except json.JSONDecodeError:
+        # Fallback: return raw text only (no PDF option)
+        return jsonify({"tailored_resume": raw, "resume_json": None})
+
+    display_text = _json_to_text(resume_json)
+    return jsonify({"tailored_resume": display_text, "resume_json": resume_json})
+
+
+@app.route("/download-pdf", methods=["POST"])
+def download_pdf():
+    data = request.get_json()
+    resume_json = data.get("resume_json")
+    if not resume_json:
+        return jsonify({"error": "No resume data provided."}), 400
+
+    try:
+        pdf_bytes = generate_resume_pdf(resume_json)
+    except Exception as e:
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    name = resume_json.get("name", "Resume").replace(" ", "_")
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{name}_Tailored.pdf",
+    )
+
+
+def _json_to_text(data):
+    """Convert structured resume JSON to readable plain text for the UI panel."""
+    lines = []
+    lines.append(data.get("name", ""))
+    lines.append(data.get("contact", ""))
+    lines.append("")
+
+    for section in data.get("sections", []):
+        lines.append(section["title"])
+        lines.append("-" * len(section["title"]))
+        entries = section.get("entries", [])
+        is_skills = entries and "label" in entries[0]
+
+        for entry in entries:
+            if is_skills:
+                lines.append(f"{entry.get('label', '')}: {entry.get('text', '')}")
+            else:
+                head  = entry.get("heading", "")
+                hdate = entry.get("heading_right", "")
+                lines.append(f"{head}  {hdate}".strip())
+
+                sub  = entry.get("subheading", "")
+                subr = entry.get("subheading_right", "")
+                if sub or subr:
+                    lines.append(f"{sub}  {subr}".strip())
+
+                if entry.get("body"):
+                    lines.append(entry["body"])
+
+                for bullet in entry.get("bullets", []):
+                    lines.append(f"  • {bullet}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
 
 
 if __name__ == "__main__":

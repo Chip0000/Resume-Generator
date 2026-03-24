@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(\"C:/Users/rabis/OneDrive/Documents/MAIN FOLDER/Resume Generator/.gitignore\")"
+    ]
+  }
+}

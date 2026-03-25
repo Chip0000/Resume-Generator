@@ -13,6 +13,35 @@ app = Flask(__name__)
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 
+def _env_flag(name):
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _startup_url(host, port):
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    return f"http://{display_host}:{port}"
+
+
+def run_server():
+    host = os.environ.get("APP_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", os.environ.get("APP_PORT", "5000")))
+
+    if not _env_flag("USE_WAITRESS"):
+        app.run(debug=True, host=host, port=port)
+        return
+
+    print(f"Open {_startup_url(host, port)}", flush=True)
+
+    try:
+        from waitress import serve
+    except ImportError as exc:
+        raise RuntimeError(
+            "Waitress is not installed. Run `pip install -r requirements.txt`."
+        ) from exc
+
+    serve(app, host=host, port=port)
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -175,4 +204,4 @@ def _json_to_text(data):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    run_server()

@@ -5,7 +5,8 @@ Font sizes, margins, line heights, and gray rules are all measured from the orig
 """
 
 import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+import pdfplumber
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepInFrame
 from reportlab.platypus.flowables import Flowable
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
@@ -27,6 +28,7 @@ DATE_COL = 105    # right-column width for dates
 
 GRAY = colors.Color(0.5333, 0.5333, 0.5333)
 LINK_COLOR = "#1155CC"
+MAX_RESUME_PAGES = 1
 
 # ── Font registration ─────────────────────────────────────────────────────────
 _FONTS = [
@@ -48,6 +50,10 @@ def _register():
         italic="TNR-Italic", boldItalic="TNR-BI")
 
 _register()
+
+
+class ResumeTooLongError(ValueError):
+    """Raised when the rendered resume exceeds the allowed page count."""
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 def _ps(name, **kw):
@@ -204,8 +210,13 @@ def _build_story(data):
 
     return story
 
+
+def _count_pdf_pages(pdf_bytes: bytes) -> int:
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        return len(pdf.pages)
+
 # ── Public API ────────────────────────────────────────────────────────────────
-def generate_resume_pdf(data: dict) -> bytes:
+def generate_resume_pdf(data: dict, max_pages: int = MAX_RESUME_PAGES) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -215,5 +226,19 @@ def generate_resume_pdf(data: dict) -> bytes:
         topMargin=T_MARGIN,
         bottomMargin=B_MARGIN,
     )
-    doc.build(_build_story(data))
-    return buf.getvalue()
+    story = _build_story(data)
+    fitted_story = [
+        KeepInFrame(doc.width, doc.height, story, mode="shrink", hAlign="LEFT", vAlign="TOP")
+    ]
+    doc.build(fitted_story)
+    pdf_bytes = buf.getvalue()
+
+    if max_pages is not None:
+        page_count = _count_pdf_pages(pdf_bytes)
+        if page_count > max_pages:
+            raise ResumeTooLongError(
+                f"Resume content exceeds the {max_pages}-page limit. "
+                "Trim less relevant bullets or shorten long descriptions."
+            )
+
+    return pdf_bytes

@@ -5,7 +5,7 @@ import pdfplumber
 from flask import Flask, request, jsonify, render_template, send_file
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from pdf_generator import generate_resume_pdf
+from pdf_generator import ResumeTooLongError, generate_resume_pdf
 
 load_dotenv()
 
@@ -90,6 +90,9 @@ RULES:
 3. Integrate keywords from the job description naturally where truthful
 4. Prioritize the most relevant bullet points first in each role
 5. Keep all sections and structural elements
+6. Preserve important information and relevant keywords from the original resume whenever truthful
+7. The final resume must fit on a single page in a traditional Times-style resume layout
+8. Prefer concise wording, but do not drop important experience or relevant keywords just to save space
 
 Return a JSON object with this EXACT schema (no explanation, no markdown, just the JSON):
 
@@ -155,6 +158,8 @@ def download_pdf():
 
     try:
         pdf_bytes = generate_resume_pdf(resume_json)
+    except ResumeTooLongError as e:
+        return jsonify({"error": str(e)}), 422
     except Exception as e:
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 

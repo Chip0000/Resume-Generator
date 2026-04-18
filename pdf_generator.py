@@ -29,6 +29,7 @@ DATE_COL = 105    # right-column width for dates
 GRAY = colors.Color(0.5333, 0.5333, 0.5333)
 LINK_COLOR = "#1155CC"
 MAX_RESUME_PAGES = 1
+MIN_READABLE_BODY_FONT_SIZE = 7.0
 
 # ── Font registration ─────────────────────────────────────────────────────────
 _FONTS = [
@@ -72,6 +73,15 @@ S_BODY    = _ps("body",    fontName="TNR",        fontSize=8,  leading=LINE_H, s
 S_SKILL   = _ps("skill",   fontName="TNR",        fontSize=8,  leading=LINE_H, spaceAfter=0, spaceBefore=0)
 S_BULLET  = _ps("bullet",  fontName="TNR",        fontSize=8,  leading=LINE_H,
                 leftIndent=36, firstLineIndent=-18, spaceAfter=0, spaceBefore=0)
+BASE_MIN_CONTENT_FONT_SIZE = min(
+    S_HEAD.fontSize,
+    S_HEAD_R.fontSize,
+    S_SUB.fontSize,
+    S_SUB_R.fontSize,
+    S_BODY.fontSize,
+    S_SKILL.fontSize,
+    S_BULLET.fontSize,
+)
 
 # ── Custom flowable: section header + gray rule ───────────────────────────────
 class SectionHeader(Flowable):
@@ -215,6 +225,11 @@ def _count_pdf_pages(pdf_bytes: bytes) -> int:
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         return len(pdf.pages)
 
+
+def _get_min_rendered_font_size(flowable: KeepInFrame) -> float:
+    shrink_scale = getattr(flowable, "_scale", 1.0)
+    return BASE_MIN_CONTENT_FONT_SIZE / shrink_scale
+
 # ── Public API ────────────────────────────────────────────────────────────────
 def generate_resume_pdf(data: dict, max_pages: int = MAX_RESUME_PAGES) -> bytes:
     buf = io.BytesIO()
@@ -227,11 +242,17 @@ def generate_resume_pdf(data: dict, max_pages: int = MAX_RESUME_PAGES) -> bytes:
         bottomMargin=B_MARGIN,
     )
     story = _build_story(data)
-    fitted_story = [
-        KeepInFrame(doc.width, doc.height, story, mode="shrink", hAlign="LEFT", vAlign="TOP")
-    ]
+    fitted_resume = KeepInFrame(doc.width, doc.height, story, mode="shrink", hAlign="LEFT", vAlign="TOP")
+    fitted_story = [fitted_resume]
     doc.build(fitted_story)
     pdf_bytes = buf.getvalue()
+
+    min_rendered_font_size = _get_min_rendered_font_size(fitted_resume)
+    if min_rendered_font_size < MIN_READABLE_BODY_FONT_SIZE - 0.01:
+        raise ResumeTooLongError(
+            f"Resume would need to shrink below {MIN_READABLE_BODY_FONT_SIZE:.1f}pt to fit on one page. "
+            "Tighten the wording slightly or trim lower-priority detail."
+        )
 
     if max_pages is not None:
         page_count = _count_pdf_pages(pdf_bytes)

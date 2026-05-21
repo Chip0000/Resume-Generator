@@ -3,3 +3,5 @@ Chip Bishop - Hardware Resume.pdf
 test_output.pdf
 __pycache__/
 *.pyc
+venv/
+.venv/

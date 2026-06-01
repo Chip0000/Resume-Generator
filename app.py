@@ -168,7 +168,7 @@ def download_pdf():
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
-        download_name=f"{name}_Tailored.pdf",
+        download_name=f"{name}_Resume.pdf",
     )
 
 

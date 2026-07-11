@@ -398,7 +398,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = (currentResumeJson.name || 'Resume').replace(/ /g, '_') + '_Resume.pdf';
+      a.download = (currentResumeJson.name || 'Resume').replace(/\s/g, '') + '_Resume.pdf';
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

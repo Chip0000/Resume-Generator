@@ -163,7 +163,7 @@ def download_pdf():
     except Exception as e:
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
-    name = resume_json.get("name", "Resume").replace(" ", "_")
+    name = "".join(resume_json.get("name", "Resume").split())
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",

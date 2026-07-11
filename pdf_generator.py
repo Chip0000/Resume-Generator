@@ -6,8 +6,19 @@ Font sizes, margins, line heights, and gray rules are all measured from the orig
 
 import io
 import pdfplumber
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepInFrame
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    KeepInFrame,
+    PageTemplate,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from reportlab.platypus.flowables import Flowable
+from reportlab.pdfgen import canvas
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.lib import colors
@@ -30,6 +41,32 @@ GRAY = colors.Color(0.5333, 0.5333, 0.5333)
 LINK_COLOR = "#1155CC"
 MAX_RESUME_PAGES = 1
 MIN_READABLE_BODY_FONT_SIZE = 7.0
+
+
+class ResumeDocTemplate(SimpleDocTemplate):
+    """Document template with no hidden horizontal frame padding.
+
+    ReportLab's SimpleDocTemplate adds 6pt of left and right padding to its
+    frame. That caused normal paragraphs and custom section headers to begin
+    6pt farther right than the fixed-width entry tables.
+    """
+
+    def build(self, flowables, canvasmaker=canvas.Canvas):
+        self._calc()
+        frame = Frame(
+            self.leftMargin,
+            self.bottomMargin,
+            self.width,
+            self.height,
+            id="resume",
+            leftPadding=0,
+            rightPadding=0,
+        )
+        self.addPageTemplates([
+            PageTemplate(id="First", frames=frame, pagesize=self.pagesize),
+            PageTemplate(id="Later", frames=frame, pagesize=self.pagesize),
+        ])
+        BaseDocTemplate.build(self, flowables, canvasmaker=canvasmaker)
 
 # ── Font registration ─────────────────────────────────────────────────────────
 _FONTS = [
@@ -233,7 +270,7 @@ def _get_min_rendered_font_size(flowable: KeepInFrame) -> float:
 # ── Public API ────────────────────────────────────────────────────────────────
 def generate_resume_pdf(data: dict, max_pages: int = MAX_RESUME_PAGES) -> bytes:
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
+    doc = ResumeDocTemplate(
         buf,
         pagesize=(PAGE_W, PAGE_H),
         leftMargin=L_MARGIN,

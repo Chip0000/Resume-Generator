@@ -108,10 +108,11 @@ S_SUB     = _ps("sub",     fontName="TNR-Italic", fontSize=8,  leading=LINE_H, s
 S_SUB_R   = _ps("sub_r",   fontName="TNR-Bold",   fontSize=8,  leading=LINE_H, alignment=TA_RIGHT, spaceAfter=0, spaceBefore=0)
 S_BODY    = _ps("body",    fontName="TNR",        fontSize=8,  leading=LINE_H, spaceAfter=0, spaceBefore=0)
 S_SKILL   = _ps("skill",   fontName="TNR",        fontSize=8,  leading=LINE_H, spaceAfter=0, spaceBefore=0)
-# Keep every line of a wrapped bullet at the same left edge.  A hanging indent
-# (a negative firstLineIndent) would pull only the first line left for the dot.
+# Put the dot in ReportLab's bullet gutter.  The body text (including every
+# wrapped line) then begins at one shared position.
 S_BULLET  = _ps("bullet",  fontName="TNR",        fontSize=8,  leading=LINE_H,
-                leftIndent=18, firstLineIndent=0, spaceAfter=0, spaceBefore=0)
+                leftIndent=36, firstLineIndent=0, bulletIndent=18,
+                bulletFontName="Arial", bulletFontSize=8, spaceAfter=0, spaceBefore=0)
 BASE_MIN_CONTENT_FONT_SIZE = min(
     S_HEAD.fontSize,
     S_HEAD_R.fontSize,
@@ -250,11 +251,12 @@ def _build_story(data):
                 if body:
                     story.append(_body_para(body))
 
-                # Bullet points with a consistent left edge, including wraps.
+                # Use a separate bullet gutter so the first and wrapped lines align.
                 for bullet in bullets:
                     story.append(Paragraph(
-                        f'<font name="Arial">\u25cf</font> {_esc(bullet)}',
+                        _esc(bullet),
                         S_BULLET,
+                        bulletText="\u25cf",
                     ))
 
     return story
